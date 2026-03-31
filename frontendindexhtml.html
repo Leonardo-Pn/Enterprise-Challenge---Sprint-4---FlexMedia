@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Tótem Flexmedia - Experiência Interativa com IA</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="totem-container">
+        <div class="glass-panel">
+            <div class="header">
+                <div class="logo-container">
+                    <div class="logo-icon">🎨</div>
+                    <h1>Flexmedia Tótem</h1>
+                </div>
+                <p class="tagline">Inteligência Artificial para uma experiência única</p>
+            </div>
+            
+            <div class="interaction-modules">
+                <!-- Módulo de Texto -->
+                <div class="module card">
+                    <div class="module-header">
+                        <span class="module-icon">💬</span>
+                        <h3>Converse com a IA</h3>
+                    </div>
+                    <div class="module-content">
+                        <textarea id="userMessage" rows="3" placeholder="Digite sua mensagem... Ex: Adorei essa obra!"></textarea>
+                        <button onclick="sendMessage()" class="btn-primary">
+                            <span>📤</span> Enviar mensagem
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Módulo de Imagem -->
+                <div class="module card">
+                    <div class="module-header">
+                        <span class="module-icon">📸</span>
+                        <h3>Análise Visual</h3>
+                    </div>
+                    <div class="module-content">
+                        <input type="file" id="imageInput" accept="image/*" capture="environment">
+                        <button onclick="sendImage()" class="btn-secondary">
+                            <span>🔍</span> Analisar com IA
+                        </button>
+                        <div id="imagePreview" class="image-preview"></div>
+                    </div>
+                </div>
+                
+                <!-- Módulo de Botões Rápidos -->
+                <div class="module card">
+                    <div class="module-header">
+                        <span class="module-icon">🎮</span>
+                        <h3>Interação Rápida</h3>
+                    </div>
+                    <div class="button-grid">
+                        <button onclick="sendButton('Ajuda')" class="btn-quick">❓ Ajuda</button>
+                        <button onclick="sendButton('Próximo')" class="btn-quick">⏩ Próximo</button>
+                        <button onclick="sendButton('Favorito')" class="btn-quick">❤️ Favorito</button>
+                        <button onclick="sendButton('Compartilhar')" class="btn-quick">📤 Compartilhar</button>
+                        <button onclick="sendButton('Info')" class="btn-quick">ℹ️ Info</button>
+                        <button onclick="sendButton('Voltar')" class="btn-quick">🔙 Voltar</button>
+                    </div>
+                </div>
+                
+                <!-- Área de Resposta -->
+                <div class="module response-module">
+                    <div class="module-header">
+                        <span class="module-icon">🤖</span>
+                        <h3>Resposta do Tótem</h3>
+                    </div>
+                    <div id="responseArea" class="response-area">
+                        <div class="response-placeholder">
+                            <span>✨</span>
+                            <p>Aguardando sua interação...</p>
+                        </div>
+                    </div>
+                    <div id="aiAnalysis" class="ai-analysis-badge"></div>
+                </div>
+            </div>
+            
+            <div class="footer">
+                <a href="/dashboard" target="_blank" class="dashboard-link">
+                    📊 Acessar Dashboard Analítico
+                </a>
+                <div class="live-stats" id="liveStats">
+                    <span>🟢 Sistema Online</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        
+        // Pré-visualização de imagem
+        document.getElementById('imageInput').addEventListener('change', function(e) {
+            const preview = document.getElementById('imagePreview');
+            if (this.files && this.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    preview.innerHTML = `<img src="${e.target.result}" alt="Preview">`;
+                }
+                reader.readAsDataURL(this.files[0]);
+            }
+        });
+        
+        async function sendMessage() {
+            const message = document.getElementById('userMessage').value;
+            if (!message.trim()) {
+                showResponse('Por favor, digite uma mensagem antes de enviar.', 'warning');
+                return;
+            }
+            
+            showLoading();
+            
+            try {
+                const response = await fetch('/api/interact', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        type: 'text',
+                        message: message,
+                        duration: 5,
+                        session_id: sessionId
+                    })
+                });
+                
+                const data = await response.json();
+                showResponse(data.response, 'success');
+                if (data.ai_analysis) {
+                    showAIAnalysis(data.ai_analysis);
+                }
+                document.getElementById('userMessage').value = '';
+                updateLiveStats();
+                
+            } catch (error) {
+                showResponse('Erro ao conectar com o servidor. Verifique se o sistema está rodando.', 'error');
+            }
+        }
+        
+        async function sendImage() {
+            const fileInput = document.getElementById('imageInput');
+            if (!fileInput.files.length) {
+                showResponse('Por favor, selecione uma imagem para análise.', 'warning');
+                return;
+            }
+            
+            showLoading();
+            
+            try {
+                const file = fileInput.files[0];
+                const reader = new FileReader();
+                
+                reader.onload = async function(e) {
+                    const response = await fetch('/api/interact', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            type: 'image',
+                            message: file.name,
+                            image: e.target.result,
+                            duration: 10,
+                            session_id: sessionId
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    showResponse(data.response, 'success');
+                    if (data.ai_analysis) {
+                        showAIAnalysis(data.ai_analysis);
+                    }
+                    updateLiveStats();
+                };
+                
+                reader.readAsDataURL(file);
+                
+            } catch (error) {
+                showResponse('Erro ao analisar imagem.', 'error');
+            }
+        }
+        
+        async function sendButton(action) {
+            showLoading();
+            
+            try {
+                const response = await fetch('/api/interact', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        type: 'button',
+                        message: action,
+                        duration: 2,
+                        session_id: sessionId
+                    })
+                });
+                
+                const data = await response.json();
+                showResponse(data.response, 'success');
+                if (data.ai_analysis) {
+                    showAIAnalysis(data.ai_analysis);
+                }
+                updateLiveStats();
+                
+            } catch (error) {
+                showResponse('Erro ao processar comando.', 'error');
+            }
+        }
+        
+        function showResponse(message, type) {
+            const responseArea = document.getElementById('responseArea');
+            responseArea.innerHTML = `
+                <div class="response-message ${type}">
+                    <div class="response-content">${message}</div>
+                    <div class="response-time">${new Date().toLocaleTimeString()}</div>
+                </div>
+            `;
+        }
+        
+        function showAIAnalysis(analysis) {
+            const badge = document.getElementById('aiAnalysis');
+            badge.innerHTML = `
+                <div class="analysis-badge">
+                    <span>🧠</span>
+                    <span>Análise IA: ${analysis.substring(0, 100)}${analysis.length > 100 ? '...' : ''}</span>
+                </div>
+            `;
+        }
+        
+        function showLoading() {
+            const responseArea = document.getElementById('responseArea');
+            responseArea.innerHTML = `
+                <div class="response-message loading">
+                    <div class="loading-spinner"></div>
+                    <div>Processando com IA...</div>
+                </div>
+            `;
+        }
+        
+        async function updateLiveStats() {
+            try {
+                const response = await fetch('/api/metrics');
+                const data = await response.json();
+                const statsDiv = document.getElementById('liveStats');
+                statsDiv.innerHTML = `
+                    <span>📊 ${data.total_interactions} interações</span>
+                    <span>⏱️ ${data.engagement_24h} nas últimas 24h</span>
+                `;
+            } catch (error) {
+                // Silently fail
+            }
+        }
+        
+        // Atualizar stats a cada 30 segundos
+        setInterval(updateLiveStats, 30000);
+        updateLiveStats();
+    </script>
+</body>
+</html>
