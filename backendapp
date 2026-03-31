@@ -1,0 +1,412 @@
+"""
+Tótem Inteligente Flexmedia - API Principal
+Integração com IA, banco de dados e interface web
+"""
+
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
+import sqlite3
+import datetime
+import pickle
+import os
+import random
+import json
+import base64
+from pathlib import Path
+from PIL import Image
+import io
+
+app = Flask(__name__, static_folder='../frontend', template_folder='../frontend')
+CORS(app)
+
+# Configurações
+BASE_DIR = Path(__file__).parent
+DB_PATH = BASE_DIR / 'database' / 'totem.db'
+MODEL_PATH = BASE_DIR / 'models' / 'sentiment_model.pkl'
+UPLOAD_FOLDER = BASE_DIR / 'static' / 'uploads'
+
+# Criar pastas necessárias
+UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
+(BASE_DIR / 'database').mkdir(exist_ok=True)
+
+# Variáveis globais para o modelo
+model = None
+vectorizer = None
+
+def init_database():
+    """Inicializa o banco de dados SQLite"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Tabela de interações
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS interacoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT,
+            tipo TEXT,
+            entrada TEXT,
+            saida_ia TEXT,
+            duracao INTEGER,
+            session_id TEXT,
+            imagem_path TEXT
+        )
+    ''')
+    
+    # Tabela de métricas agregadas
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS metricas_diarias (
+            data TEXT PRIMARY KEY,
+            total_interacoes INTEGER,
+                interacoes_texto INTEGER,
+            interacoes_imagem INTEGER,
+            interacoes_botao INTEGER,
+            sentimento_positivo INTEGER,
+            sentimento_curioso INTEGER,
+            sentimento_negativo INTEGER
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    print("✅ Banco de dados inicializado")
+
+def load_ai_model():
+    """Carrega o modelo de IA treinado"""
+    global model, vectorizer
+    try:
+        if MODEL_PATH.exists():
+            with open(MODEL_PATH, 'rb') as f:
+                model, vectorizer = pickle.load(f)
+            print("✅ Modelo de IA carregado com sucesso!")
+            return True
+        else:
+            print("⚠️ Modelo não encontrado. Execute train_model.py primeiro")
+            return False
+    except Exception as e:
+        print(f"❌ Erro ao carregar modelo: {e}")
+        return False
+
+def analyze_sentiment(text):
+    """Classifica sentimento do texto usando IA"""
+    if model and vectorizer:
+        try:
+            X = vectorizer.transform([text])
+            prediction = model.predict(X)[0]
+            confidence = max(model.predict_proba(X)[0])
+            return prediction, confidence
+        except:
+            pass
+    
+    # Fallback baseado em palavras-chave
+    text_lower = text.lower()
+    palavras_positivas = ['ador', 'legal', 'incr', 'gost', 'fantást', 'marav', 'ótimo', 'excelente']
+    palavras_curiosas = ['como', 'o que', 'explique', 'curios', 'por que', 'qual', 'quando']
+    palavras_negativas = ['ruim', 'chato', 'entedi', 'não gost', 'poderia melhor', 'fraco']
+    
+    if any(p in text_lower for p in palavras_positivas):
+        return "Positivo", 0.75
+    elif any(p in text_lower for p in palavras_curiosas):
+        return "Curioso", 0.70
+    elif any(p in text_lower for p in palavras_negativas):
+        return "Negativo", 0.65
+    return "Neutro", 0.50
+
+def analyze_image(image_data):
+    """Analisa imagem usando técnicas de visão computacional"""
+    try:
+        # Decodificar imagem base64
+        if ',' in image_data:
+            image_data = image_data.split(',')[1]
+        image_bytes = base64.b64decode(image_data)
+        image = Image.open(io.BytesIO(image_bytes))
+        
+        # Simular análise (em produção usaria OpenCV real)
+        width, height = image.size
+        format_name = image.format or 'JPEG'
+        
+        # Análise simulada baseada no tamanho e características
+        if width > 2000:
+            resolution = "Alta resolução"
+        elif width > 1000:
+            resolution = "Média resolução"
+        else:
+            resolution = "Baixa resolução"
+        
+        # Simular detecção de pessoas
+        import random
+        num_pessoas = random.randint(1, 5)
+        
+        if num_pessoas == 1:
+            composicao = "visitante sozinho"
+        elif num_pessoas <= 3:
+            composicao = "pequeno grupo"
+        else:
+            composicao = "grupo numeroso"
+        
+        # Simular expressão dominante
+        expressoes = ["curiosidade", "alegria", "neutralidade", "surpresa"]
+        expressao = random.choice(expressoes)
+        
+        resultado = {
+            "formato": format_name,
+            "resolucao": resolution,
+            "dimensoes": f"{width}x{height}",
+            "pessoas_detectadas": num_pessoas,
+            "composicao": composicao,
+            "expressao_dominante": expressao,
+            "recomendacao": self.generate_recommendation(composicao, expressao)
+        }
+        
+        return resultado
+    
+    except Exception as e:
+        return {"erro": str(e), "recomendacao": "Não foi possível analisar a imagem"}
+
+def generate_recommendation(composicao, expressao):
+    """Gera recomendações baseadas na análise visual"""
+    if composicao == "visitante sozinho":
+        if expressao == "curiosidade":
+            return "Recomendo conteúdo interativo detalhado sobre a obra"
+        elif expressao == "alegria":
+            return "Sugiro compartilhar esta experiência nas redes sociais"
+        else:
+            return "Que tal explorar a linha do tempo interativa?"
+    elif composicao == "pequeno grupo":
+        return "Experiência colaborativa disponível! Toquem juntos na tela"
+    else:
+        return "Área de grupo ativada! Conteúdo expandido para múltiplos visitantes"
+
+@app.route('/')
+def index():
+    """Página principal do totem"""
+    return send_from_directory('../frontend', 'index.html')
+
+@app.route('/dashboard')
+def dashboard():
+    """Dashboard analítico"""
+    return send_from_directory('../frontend', 'dashboard.html')
+
+@app.route('/api/interact', methods=['POST'])
+def interact():
+    """Endpoint principal de interação"""
+    try:
+        data = request.json
+        interaction_type = data.get('type', 'text')
+        user_input = data.get('message', '')
+        duration = data.get('duration', 5)
+        session_id = data.get('session_id', 'anonymous')
+        image_data = data.get('image', None)
+        
+        response_text = ""
+        ai_result = ""
+        imagem_path = None
+        
+        # Processar baseado no tipo de interação
+        if interaction_type == 'text':
+            sentiment, confidence = analyze_sentiment(user_input)
+            ai_result = f"{sentiment} (confiança: {confidence:.1%})"
+            
+            # Resposta personalizada
+            if sentiment == "Positivo":
+                response_text = f"🎉 Fico feliz que você esteja gostando! {user_input[:50]}... Sua satisfação é nosso maior prêmio!"
+            elif sentiment == "Curioso":
+                response_text = f"🔍 Que ótimo que você está curioso! Vou te mostrar detalhes fascinantes sobre {user_input[:30]}..."
+            elif sentiment == "Negativo":
+                response_text = f"💡 Agradecemos seu feedback sincero! Vamos trabalhar para melhorar sua experiência."
+            else:
+                response_text = f"🤝 Obrigado pela interação! Continue explorando nosso acervo digital."
+        
+        elif interaction_type == 'image' and image_data:
+            analysis = analyze_image(image_data)
+            ai_result = json.dumps(analysis, ensure_ascii=False)
+            
+            # Salvar imagem se necessário
+            if 'pessoas_detectadas' in analysis:
+                response_text = f"📸 Análise concluída! Detectei {analysis['pessoas_detectadas']} pessoa(s). {analysis.get('recomendacao', '')}"
+            else:
+                response_text = "📸 Imagem recebida e analisada com sucesso!"
+        
+        elif interaction_type == 'button':
+            buttons_response = {
+                'Ajuda': "🆘 Estou aqui para ajudar! Posso informar sobre obras, horários, ou te dar dicas personalizadas.",
+                'Próximo': "⏩ Carregando próximo conteúdo interativo...",
+                'Favorito': "❤️ Excelente escolha! Adicionei aos seus favoritos. Você pode ver todos depois.",
+                'Compartilhar': "📤 Compartilhe sua experiência! Use #Flexmedia nas redes sociais.",
+                'Voltar': "🔙 Retornando ao menu principal...",
+                'Info': "ℹ️ Totem Flexmedia v2.0 - Experiência com IA"
+            }
+            response_text = buttons_response.get(user_input, f"✅ Comando '{user_input}' executado!")
+            ai_result = f"Botão pressionado: {user_input}"
+        
+        # Salvar no banco de dados
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO interacoes 
+            (timestamp, tipo, entrada, saida_ia, duracao, session_id, imagem_path) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            datetime.datetime.now().isoformat(),
+            interaction_type,
+            user_input[:200],  # Limitar tamanho
+            ai_result[:500],   # Limitar tamanho
+            duration,
+            session_id,
+            imagem_path
+        ))
+        conn.commit()
+        
+        # Atualizar métricas diárias
+        hoje = datetime.datetime.now().date().isoformat()
+        cursor.execute('''
+            INSERT INTO metricas_diarias (data, total_interacoes, interacoes_texto, interacoes_imagem, interacoes_botao)
+            VALUES (?, 1, ?, ?, ?)
+            ON CONFLICT(data) DO UPDATE SET
+            total_interacoes = total_interacoes + 1,
+            interacoes_texto = interacoes_texto + ?,
+            interacoes_imagem = interacoes_imagem + ?,
+            interacoes_botao = interacoes_botao + ?
+        ''', (
+            hoje,
+            1 if interaction_type == 'text' else 0,
+            1 if interaction_type == 'image' else 0,
+            1 if interaction_type == 'button' else 0,
+            1 if interaction_type == 'text' else 0,
+            1 if interaction_type == 'image' else 0,
+            1 if interaction_type == 'button' else 0
+        ))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            "success": True,
+            "response": response_text,
+            "ai_analysis": ai_result,
+            "timestamp": datetime.datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "response": "Desculpe, ocorreu um erro ao processar sua solicitação."
+        }), 500
+
+@app.route('/api/metrics', methods=['GET'])
+def get_metrics():
+    """Retorna métricas e análises do sistema"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        
+        # Métricas principais
+        cursor.execute("SELECT COUNT(*) FROM interacoes")
+        total = cursor.fetchone()[0]
+        
+        # Interações por tipo
+        cursor.execute("SELECT tipo, COUNT(*) FROM interacoes GROUP BY tipo")
+        by_type = [{"type": t[0], "count": t[1]} for t in cursor.fetchall()]
+        
+        # Interações últimas 24h
+        cursor.execute("SELECT COUNT(*) FROM interacoes WHERE timestamp > datetime('now', '-1 day')")
+        last_24h = cursor.fetchone()[0]
+        
+        # Sentimentos mais comuns (para interações de texto)
+        cursor.execute('''
+            SELECT saida_ia, COUNT(*) as count 
+            FROM interacoes 
+            WHERE tipo = 'text' AND saida_ia LIKE '%Positivo%'
+            GROUP BY saida_ia
+        ''')
+        positivos = sum(row[1] for row in cursor.fetchall())
+        
+        cursor.execute('''
+            SELECT saida_ia, COUNT(*) as count 
+            FROM interacoes 
+            WHERE tipo = 'text' AND saida_ia LIKE '%Curioso%'
+            GROUP BY saida_ia
+        ''')
+        curiosos = sum(row[1] for row in cursor.fetchall())
+        
+        cursor.execute('''
+            SELECT saida_ia, COUNT(*) as count 
+            FROM interacoes 
+            WHERE tipo = 'text' AND saida_ia LIKE '%Negativo%'
+            GROUP BY saida_ia
+        ''')
+        negativos = sum(row[1] for row in cursor.fetchall())
+        
+        # Horários de pico
+        cursor.execute('''
+            SELECT strftime('%H', timestamp) as hora, COUNT(*) as total
+            FROM interacoes
+            GROUP BY hora
+            ORDER BY total DESC
+            LIMIT 5
+        ''')
+        peak_hours = [{"hour": f"{h[0]}:00", "count": h[1]} for h in cursor.fetchall()]
+        
+        # Dados para gráfico de evolução (últimos 7 dias)
+        cursor.execute('''
+            SELECT date(timestamp) as dia, COUNT(*) as total
+            FROM interacoes
+            WHERE timestamp > datetime('now', '-7 days')
+            GROUP BY dia
+            ORDER BY dia
+        ''')
+        evolution = [{"date": row[0], "count": row[1]} for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        return jsonify({
+            "total_interactions": total,
+            "by_type": by_type,
+            "engagement_24h": last_24h,
+            "sentiment_distribution": {
+                "positivo": positivos,
+                "curioso": curiosos,
+                "negativo": negativos,
+                "neutro": total - (positivos + curiosos + negativos)
+            },
+            "peak_hours": peak_hours,
+            "evolution": evolution,
+            "timestamp": datetime.datetime.now().isoformat()
+        })
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/interactions/export', methods=['GET'])
+def export_interactions():
+    """Exporta todas as interações em JSON"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM interacoes ORDER BY timestamp DESC")
+        columns = [description[0] for description in cursor.description]
+        interactions = []
+        for row in cursor.fetchall():
+            interactions.append(dict(zip(columns, row)))
+        conn.close()
+        
+        return jsonify({
+            "total": len(interactions),
+            "interactions": interactions
+        })
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    init_database()
+    load_ai_model()
+    
+    print("\n" + "="*60)
+    print("🎯 TÓTEM INTELIGENTE FLEXMEDIA - IA INTEGRADA")
+    print("="*60)
+    print("🌐 Interface do Totem: http://localhost:5000")
+    print("📊 Dashboard Analítico: http://localhost:5000/dashboard")
+    print("📈 API de Métricas: http://localhost:5000/api/metrics")
+    print("="*60 + "\n")
+    
+    app.run(debug=True, host='0.0.0.0', port=5000)
